@@ -31,6 +31,8 @@ def parse_args():
                         help='Web server host (default: from CVP_HTTP_HOST env var or 0.0.0.0)')
     parser.add_argument('--web-port', type=int, default=int(os.environ.get('CVP_HTTP_PORT', '5000')), 
                         help='Web server port (default: from CVP_HTTP_PORT env var or 5000)')
+    parser.add_argument('--ice-host', default=os.environ.get('CVP_ICE_HOST', 'localhost'),
+                        help='Ice callback host (default: from CVP_ICE_HOST env var or localhost)')
     return parser.parse_args()
 
 class MumbleChannelTrackerI(MumbleServer.ServerCallback):
@@ -235,7 +237,7 @@ def initialize_mumble_connection(args):
                 
                 # Create a unique adapter for each callback
                 adapter_name = f"Callback.Client.{server_id}"
-                adapter = ice.createObjectAdapterWithEndpoints(adapter_name, f"tcp -h {args.host}")
+                adapter = ice.createObjectAdapterWithEndpoints(adapter_name, f"tcp -h {args.ice_host}")
                 adapter.activate()
                 adapters.append(adapter)  # Keep a reference to the adapter
                 
@@ -320,6 +322,7 @@ def listen_server(server_id):
         }
     )
 
+@app.route('/')
 @app.route('/web')
 def serve_web():
     """Serve the main HTML page"""
@@ -339,6 +342,8 @@ def serve_icon(filename):
 if __name__ == "__main__":
     # Parse command line arguments
     args = parse_args()
+
+    print(f"Starting with host={args.host}, ice_port={args.port}")
     
     # Set up signal handler for clean shutdown
     signal.signal(signal.SIGINT, signal_handler)
