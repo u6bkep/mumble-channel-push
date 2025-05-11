@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mumble Server Viewer</title>
+    <style>
+        :root {
+            /* Light mode (default) variables */
+            --bg-color: #f5f5f5;
+            --container-bg: white;
+            --text-color: #333;
+            --header-color: #333;
+            --controls-bg: #f0f0f0;
+            --server-border: #ddd;
+            --server-name-color: #2a5885;
+            --channel-name-color: #4a76a8;
+            --muted-color: #999;
+            --loading-color: #666;
+            --error-bg: #ffeeee;
+            --error-color: red;
+            --empty-color: #aaa;
+            --timestamp-color: #999;
+            --last-refresh-color: #666;
+            --share-bg: #f9f9f9;
+            --share-border: #ddd;
+            --input-border: #ccc;
+            --box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Dark mode variables */
+        [data-theme="dark"] {
+            --bg-color: #121212;
+            --container-bg: #1e1e1e;
+            --text-color: #e0e0e0;
+            --header-color: #f0f0f0;
+            --controls-bg: #2a2a2a;
+            --server-border: #444;
+            --server-name-color: #4f8cc9;
+            --channel-name-color: #71a0d8;
+            --muted-color: #888;
+            --loading-color: #aaa;
+            --error-bg: #552222;
+            --error-color: #ff6666;
+            --empty-color: #777;
+            --timestamp-color: #888;
+            --last-refresh-color: #999;
+            --share-bg: #2a2a2a;
+            --share-border: #444;
+            --input-border: #555;
+            --box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: var(--container-bg);
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: var(--box-shadow);
+            transition: background-color 0.3s;
+        }
+
+        h1 {
+            color: var(--header-color);
+            margin-top: 0;
+        }
+
+        .controls {
+            margin-bottom: 20px;
+            padding: 10px;
+            background-color: var(--controls-bg);
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+
+        .server-checkbox {
+            margin-right: 10px;
+        }
+
+        .refresh-controls {
+            margin-top: 15px;
+            display: flex;
+            align-items: center;
+        }
+
+        .server {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid var(--server-border);
+            border-radius: 4px;
+            transition: border-color 0.3s;
+        }
+
+        .server-name {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: var(--server-name-color);
+            transition: color 0.3s;
+        }
+
+        .channel {
+            margin-left: 20px;
+            margin-bottom: 10px;
+        }
+
+        .channel-name {
+            font-weight: bold;
+            color: var(--channel-name-color);
+            transition: color 0.3s;
+        }
+
+        .users {
+            margin-left: 40px;
+        }
+
+        .user {
+            margin: 5px 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .user-icon {
+            width: 16px;
+            height: 16px;
+            margin-left: 5px;
+            vertical-align: middle;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: var(--loading-color);
+        }
+
+        .error {
+            color: var(--error-color);
+            padding: 10px;
+            background-color: var(--error-bg);
+            border-radius: 4px;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .empty-channel {
+            color: var(--empty-color);
+            font-style: italic;
+        }
+
+        .updated-time {
+            font-size: 12px;
+            color: var(--timestamp-color);
+            margin-top: 5px;
+            text-align: right;
+        }
+
+        .last-refresh {
+            font-size: 12px;
+            color: var(--last-refresh-color);
+            margin-left: 15px;
+        }
+
+        .share-link {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: var(--share-bg);
+            border: 1px solid var(--share-border);
+            border-radius: 4px;
+            transition: background-color 0.3s, border-color 0.3s;
+        }
+
+        .share-link input {
+            width: 100%;
+            padding: 5px;
+            border: 1px solid var(--input-border);
+            border-radius: 3px;
+            background-color: var(--container-bg);
+            color: var(--text-color);
+            transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+        }
+
+        /* Theme toggle switch */
+        .theme-switch {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .theme-switch label {
+            margin-right: 10px;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #4a76a8;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        /* Additional styles for dark mode */
+        [data-theme="dark"] button,
+        [data-theme="dark"] select {
+            background-color: #444;
+            color: #e0e0e0;
+            border: 1px solid #555;
+        }
+
+        [data-theme="dark"] summary {
+            color: #e0e0e0;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Mumble Server Viewer</h1>
+        <div id="controls" class="controls">
+            <details>
+                <summary>Settings</summary>
+                <div class="theme-switch">
+                    <label for="theme-toggle">Dark Mode:</label>
+                    <label class="switch">
+                        <input type="checkbox" id="theme-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="theme-switch">
+                    <label for="minimal-toggle">Minimal Mode:</label>
+                    <label class="switch">
+                        <input type="checkbox" id="minimal-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <h3>Servers</h3>
+                <div id="server-checkboxes">
+                    <div class="loading">Loading server list...</div>
+                </div>
+                <div class="refresh-controls">
+                    <button id="refresh-btn">Refresh Now</button>
+                    <span class="last-refresh" id="last-refresh">Last refresh: Never</span>
+                    <label for="auto-refresh" style="margin-left: 15px;">
+                        <input type="checkbox" id="auto-refresh" checked>
+                        Auto-refresh every
+                    </label>
+                    <select id="refresh-interval">
+                        <option value="10">10 seconds</option>
+                        <option value="30" selected>30 seconds</option>
+                        <option value="60">1 minute</option>
+                        <option value="300">5 minutes</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="use-sse" style="margin-right: 10px;">
+                        <input type="checkbox" id="use-sse" checked>
+                        Use real-time updates
+                    </label>
+                    <span id="sse-status" style="font-size: 12px;">(Connected)</span>
+                </div>
+                <details>
+                    <summary>Share this view</summary>
+                    <div class="share-link">
+                        <div>Share this view:</div>
+                        <input type="text" id="share-url" readonly onclick="this.select()">
+                    </div>
+                </details>
+            </details>
+        </div>
+        <div id="servers">
+            <div class="loading">Loading servers...</div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const serversContainer = document.getElementById('servers');
+            const serverCheckboxesContainer = document.getElementById('server-checkboxes');
+            const refreshBtn = document.getElementById('refresh-btn');
+            const lastRefreshEl = document.getElementById('last-refresh');
+            const autoRefreshCheckbox = document.getElementById('auto-refresh');
+            const refreshIntervalSelect = document.getElementById('refresh-interval');
+            const shareUrlInput = document.getElementById('share-url');
+            const themeToggle = document.getElementById('theme-toggle');
+            const useSSECheckbox = document.getElementById('use-sse');
+            const sseStatusEl = document.getElementById('sse-status');
+            const settingsDetails = document.querySelector('#controls details');
+            const minimalToggle = document.getElementById('minimal-toggle');
+
+            let serverIds = [];
+            let serverData = {};
+            let refreshTimer = null;
+            let initialLoadComplete = false;
+            let sseConnections = {};  // Map server ID to SSE connection
+
+            // Base API URL - adjust if needed
+            const API_BASE = window.location.origin;
+
+            // Theme handling
+            function setTheme(isDark) {
+                if (isDark) {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                    themeToggle.checked = true;
+                } else {
+                    document.documentElement.setAttribute('data-theme', 'light');
+                    themeToggle.checked = false;
+                }
+            }
+
+            // Initialize theme from URL parameter or system preference
+            function initTheme(params) {
+                const theme = params.theme;
+                
+                if (theme === 'dark' || theme === 'light') {
+                    setTheme(theme === 'dark');
+                } else {
+                    // Check if user prefers dark mode
+                    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    setTheme(prefersDark);
+                }
+            }
+
+            // Parse URL parameters to get configuration
+            function getUrlParams() {
+                const params = new URLSearchParams(window.location.search);
+                const servers = params.get('servers');
+                const autoRefresh = params.get('autoRefresh');
+                const interval = params.get('interval');
+                const useSSE = params.get('useSSE');
+                const theme = params.get('theme');
+                const minimal = params.get('minimal');
+
+                return {
+                    servers: servers ? servers.split(',').map(Number) : [],
+                    autoRefresh: autoRefresh !== 'false',
+                    interval: interval ? Number(interval) : 30,
+                    useSSE: useSSE !== 'false',
+                    theme: theme || null,
+                    minimal: minimal === 'true'
+                };
+            }
+
+            // Update URL parameters based on current configuration
+            function updateUrlParams() {
+                // Get all checked server IDs
+                const checkedServerIds = Array.from(document.querySelectorAll('.server-checkbox:checked'))
+                    .map(checkbox => checkbox.dataset.serverId);
+
+                const params = new URLSearchParams();
+                if (checkedServerIds.length > 0) {
+                    params.set('servers', checkedServerIds.join(','));
+                }
+
+                params.set('autoRefresh', autoRefreshCheckbox.checked);
+                params.set('interval', refreshIntervalSelect.value);
+                params.set('useSSE', useSSECheckbox.checked);
+                
+                // Include current theme in URL
+                params.set('theme', document.documentElement.getAttribute('data-theme') || 'light');
+                
+                // Set minimal mode parameter
+                params.set('minimal', minimalToggle.checked);
+
+                // Update URL without refreshing page
+                const newUrl = window.location.pathname + '?' + params.toString();
+                history.replaceState(null, '', newUrl);
+
+                // Update share link
+                shareUrlInput.value = window.location.href;
+            }
+
+            // SSE connection management
+            function setupSSE(serverId) {
+                if (!useSSECheckbox.checked || sseConnections[serverId]) {
+                    return;
+                }
+
+                console.log(`Setting up SSE for server ${serverId}`);
+                
+                const eventSource = new EventSource(`${API_BASE}/listen/${serverId}`);
+                
+                eventSource.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        serverData[serverId] = data;
+                        updateServerDisplay(serverId);
+                        updateLastRefreshTime();
+                    } catch (e) {
+                        console.error(`Error processing SSE data: ${e}`);
+                    }
+                };
+                
+                eventSource.onerror = function() {
+                    console.error(`SSE connection error for server ${serverId}`);
+                    sseStatusEl.textContent = "(Connection error)";
+                    sseStatusEl.style.color = "var(--error-color)";
+                    
+                    // Close and remove this connection
+                    eventSource.close();
+                    delete sseConnections[serverId];
+                    
+                    // Try to reconnect after a delay if still checked
+                    setTimeout(() => {
+                        if (useSSECheckbox.checked) {
+                            setupSSE(serverId);
+                        }
+                    }, 5000);
+                };
+                
+                eventSource.onopen = function() {
+                    console.log(`SSE connection opened for server ${serverId}`);
+                    sseStatusEl.textContent = "(Connected)";
+                    sseStatusEl.style.color = "";
+                };
+                
+                sseConnections[serverId] = eventSource;
+            }
+
+            function closeSSE(serverId) {
+                if (sseConnections[serverId]) {
+                    console.log(`Closing SSE for server ${serverId}`);
+                    sseConnections[serverId].close();
+                    delete sseConnections[serverId];
+                }
+            }
+
+            function closeAllSSE() {
+                for (const serverId in sseConnections) {
+                    closeSSE(serverId);
+                }
+                sseStatusEl.textContent = "(Disabled)";
+            }
+
+            // Toggle SSE connections
+            useSSECheckbox.addEventListener('change', function() {
+                if (this.checked) {
+                    // Set up SSE for all visible servers
+                    const checkedServers = Array.from(document.querySelectorAll('.server-checkbox:checked'))
+                        .map(checkbox => checkbox.dataset.serverId);
+                    
+                    checkedServers.forEach(setupSSE);
+                    sseStatusEl.textContent = "(Connected)";
+                } else {
+                    closeAllSSE();
+                }
+                
+                // Update auto-refresh controls visibility based on SSE state
+                updateAutoRefreshVisibility();
+                
+                // Update URL parameters when useSSE changes
+                updateUrlParams();
+            });
+
+            function updateAutoRefreshVisibility() {
+                const refreshControls = document.querySelector('.refresh-controls');
+                if (useSSECheckbox.checked) {
+                    refreshControls.style.opacity = "0.5";
+                    autoRefreshCheckbox.disabled = true;
+                    refreshIntervalSelect.disabled = true;
+                    refreshBtn.disabled = true;
+                } else {
+                    refreshControls.style.opacity = "1";
+                    autoRefreshCheckbox.disabled = false;
+                    refreshIntervalSelect.disabled = false;
+                    refreshBtn.disabled = false;
+                }
+            }
+
+            // Apply configuration from URL parameters
+            function applyUrlParams() {
+                const params = getUrlParams();
+
+                // Set theme
+                initTheme(params);
+
+                autoRefreshCheckbox.checked = params.autoRefresh;
+                useSSECheckbox.checked = params.useSSE;
+                minimalToggle.checked = params.minimal;
+
+                if (params.interval) {
+                    // Find and select the matching option or default to 30
+                    const option = Array.from(refreshIntervalSelect.options)
+                        .find(option => Number(option.value) === params.interval);
+
+                    if (option) {
+                        option.selected = true;
+                    }
+                }
+
+                updateAutoRefreshVisibility();
+                applyMinimalMode(params.minimal);
+
+                // Server IDs will be handled when servers are loaded
+                return params;
+            }
+
+            // Initialize auto-refresh timer
+            function setupAutoRefresh() {
+                clearTimeout(refreshTimer);
+                if (autoRefreshCheckbox.checked && !useSSECheckbox.checked) {
+                    const interval = Number(refreshIntervalSelect.value) * 1000;
+                    refreshTimer = setTimeout(refreshSelectedServers, interval);
+                }
+            }
+
+            // Format timestamp for display
+            function formatTime(date) {
+                return date.toLocaleTimeString();
+            }
+
+            // Update last refresh timestamp
+            function updateLastRefreshTime() {
+                const now = new Date();
+                lastRefreshEl.textContent = `Last refresh: ${formatTime(now)}`;
+            }
+
+            // Function to fetch and update only selected servers
+            function refreshSelectedServers() {
+                updateLastRefreshTime();
+
+                // Get all checked server checkboxes
+                const checkedServers = Array.from(document.querySelectorAll('.server-checkbox:checked'))
+                    .map(checkbox => checkbox.dataset.serverId);
+
+                if (checkedServers.length > 0) {
+                    // Update only the selected servers
+                    const updatePromises = checkedServers.map(serverId => updateServerData(serverId));
+                    Promise.all(updatePromises).catch(error => {
+                        console.error('Error updating servers:', error);
+                    });
+                }
+
+                setupAutoRefresh();
+            }
+
+            // Apply initial configuration
+            const config = applyUrlParams();
+            shareUrlInput.value = window.location.href;
+
+            // Add event listener for theme toggle
+            themeToggle.addEventListener('change', function() {
+                setTheme(this.checked);
+                updateUrlParams();
+            });
+
+            // Add event listener for minimal mode toggle
+            minimalToggle.addEventListener('change', function() {
+                applyMinimalMode(this.checked);
+                updateUrlParams();
+            });
+
+            // Event listeners
+            refreshBtn.addEventListener('click', refreshSelectedServers);
+
+            autoRefreshCheckbox.addEventListener('change', function () {
+                setupAutoRefresh();
+                updateUrlParams();
+            });
+
+            refreshIntervalSelect.addEventListener('change', function () {
+                setupAutoRefresh();
+                updateUrlParams();
+            });
+
+            // Function to check if a channel has any users (directly or in subchannels)
+            function channelHasUsers(channel) {
+                if (channel.users && channel.users.length > 0) {
+                    return true;
+                }
+
+                if (channel.channels && channel.channels.length > 0) {
+                    for (const subChannel of channel.channels) {
+                        if (channelHasUsers(subChannel)) {
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+            }
+
+            // Function to build a channel tree
+            function renderChannel(channel) {
+                // Skip channels without users
+                if (!channelHasUsers(channel)) {
+                    return null;
+                }
+
+                const channelDiv = document.createElement('div');
+                channelDiv.className = 'channel';
+
+                const channelName = document.createElement('div');
+                channelName.className = 'channel-name';
+                channelName.textContent = channel.name;
+                channelDiv.appendChild(channelName);
+
+                // Add users if present
+                if (channel.users && channel.users.length > 0) {
+                    const usersDiv = document.createElement('div');
+                    usersDiv.className = 'users';
+
+                    channel.users.forEach(user => {
+                        const userDiv = document.createElement('div');
+                        userDiv.className = 'user';
+                        
+                        // Add username span
+                        const userName = document.createElement('span');
+                        userName.textContent = user.name;
+                        userDiv.appendChild(userName);
+                        
+                        // Add icons instead of text labels
+                        if (user.selfMute) {
+                            const icon = document.createElement('img');
+                            icon.className = 'user-icon';
+                            icon.src = '/icons/muted_self.svg';
+                            icon.alt = 'Self-Muted';
+                            icon.title = 'Self-Muted';
+                            userDiv.appendChild(icon);
+                        } 
+                        if (user.mute) {
+                            const icon = document.createElement('img');
+                            icon.className = 'user-icon';
+                            icon.src = '/icons/muted_server.svg';
+                            icon.alt = 'Server-Muted';
+                            icon.title = 'Server-Muted';
+                            userDiv.appendChild(icon);
+                        }
+                        
+                        if (user.selfDeaf) {
+                            const icon = document.createElement('img');
+                            icon.className = 'user-icon';
+                            icon.src = '/icons/deafened_self.svg';
+                            icon.alt = 'Self-Deafened';
+                            icon.title = 'Self-Deafened';
+                            userDiv.appendChild(icon);
+                        }
+                        if (user.deaf) {
+                            const icon = document.createElement('img');
+                            icon.className = 'user-icon';
+                            icon.src = '/icons/deafened_server.svg';
+                            icon.alt = 'Server-Deafened';
+                            icon.title = 'Server-Deafened';
+                            userDiv.appendChild(icon);
+                        }
+                        
+                        usersDiv.appendChild(userDiv);
+                    });
+
+                    channelDiv.appendChild(usersDiv);
+                }
+
+                // Add subchannels if present and contain users
+                if (channel.channels && channel.channels.length > 0) {
+                    for (const subChannel of channel.channels) {
+                        const subChannelDiv = renderChannel(subChannel);
+                        if (subChannelDiv) {
+                            channelDiv.appendChild(subChannelDiv);
+                        }
+                    }
+                }
+
+                return channelDiv;
+            }
+
+            // Function to update a server's display based on data
+            function updateServerDisplay(serverId) {
+                const data = serverData[serverId];
+                const serverDiv = document.getElementById(`server-${serverId}`);
+                
+                if (!serverDiv || !data) return;
+                
+                serverDiv.innerHTML = '';
+
+                const serverName = document.createElement('div');
+                serverName.className = 'server-name';
+                serverName.textContent = data.name || `Server ${serverId}`;
+                serverDiv.appendChild(serverName);
+
+                // Update the checkbox label with the real server name
+                const checkboxLabel = document.querySelector(`label[for="server-checkbox-${serverId}"]`);
+                if (checkboxLabel) {
+                    checkboxLabel.textContent = data.name || `Server ${serverId}`;
+                }
+
+                if (data.root) {
+                    const rootChannel = renderChannel(data.root);
+                    if (rootChannel) {
+                        serverDiv.appendChild(rootChannel);
+                    } else {
+                        const emptyMessage = document.createElement('div');
+                        emptyMessage.className = 'empty-channel';
+                        emptyMessage.textContent = 'No active users on this server';
+                        serverDiv.appendChild(emptyMessage);
+                    }
+                } else {
+                    const error = document.createElement('div');
+                    error.className = 'error';
+                    error.textContent = 'Server data structure is invalid.';
+                    serverDiv.appendChild(error);
+                }
+
+                // Add last updated time
+                const updatedTime = document.createElement('div');
+                updatedTime.className = 'updated-time';
+                updatedTime.textContent = `Updated: ${formatTime(new Date())}`;
+                serverDiv.appendChild(updatedTime);
+            }
+
+            // Function to update a server's data
+            function updateServerData(serverId) {
+                return fetch(`${API_BASE}/${serverId}`).then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Failed to fetch server ${serverId}`);
+                    }
+                    return response.json();
+                }).then(data => {
+                    serverData[serverId] = data;
+                    updateServerDisplay(serverId);
+                    return data;
+                });
+            }
+
+            // Function to create server divs and checkboxes once we have the server list
+            function setupServerUI(serverIds) {
+                // Sort server IDs numerically
+                serverIds.sort((a, b) => a - b);
+
+                // Create checkboxes for each server
+                serverCheckboxesContainer.innerHTML = '';
+
+                serverIds.forEach(serverId => {
+                    const checkboxDiv = document.createElement('div');
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.id = `server-checkbox-${serverId}`;
+                    checkbox.className = 'server-checkbox';
+
+                    // Check if this server is in URL params
+                    if (config.servers.length === 0 || config.servers.includes(Number(serverId))) {
+                        checkbox.checked = true;
+                    } else {
+                        checkbox.checked = false;
+                    }
+
+                    checkbox.dataset.serverId = serverId;
+
+                    const label = document.createElement('label');
+                    label.htmlFor = `server-checkbox-${serverId}`;
+                    label.textContent = `Server ${serverId}`;
+
+                    checkboxDiv.appendChild(checkbox);
+                    checkboxDiv.appendChild(label);
+                    serverCheckboxesContainer.appendChild(checkboxDiv);
+
+                    // Create server div
+                    const serverDiv = document.createElement('div');
+                    serverDiv.className = 'server';
+                    serverDiv.id = `server-${serverId}`;
+
+                    // Check if this server should be hidden based on checkbox
+                    if (!checkbox.checked) {
+                        serverDiv.classList.add('hidden');
+                    }
+
+                    serverDiv.innerHTML = `<div class="loading">Loading server ${serverId}...</div>`;
+                    serversContainer.appendChild(serverDiv);
+
+                    // Add event listener for checkbox
+                    checkbox.addEventListener('change', function () {
+                        if (this.checked) {
+                            serverDiv.classList.remove('hidden');
+                            // Update the server data if it's now visible
+                            updateServerData(serverId).catch(error => {
+                                console.error(`Error updating server ${serverId}:`, error);
+                            });
+                            // Setup SSE if enabled
+                            if (useSSECheckbox.checked) {
+                                setupSSE(serverId);
+                            }
+                        } else {
+                            serverDiv.classList.add('hidden');
+                            // Close SSE connection if open
+                            closeSSE(serverId);
+                        }
+                        updateUrlParams();
+                    });
+                });
+
+                // Update URL with initial state
+                updateUrlParams();
+
+                // Only load the checked servers initially
+                const checkedServers = Array.from(document.querySelectorAll('.server-checkbox:checked'))
+                    .map(checkbox => checkbox.dataset.serverId);
+
+                const updatePromises = checkedServers.map(serverId => updateServerData(serverId));
+                Promise.all(updatePromises)
+                    .then(() => {
+                        initialLoadComplete = true;
+                        updateLastRefreshTime();
+                        
+                        // Set up SSE connections for checked servers if enabled
+                        if (useSSECheckbox.checked) {
+                            checkedServers.forEach(setupSSE);
+                        } else {
+                            setupAutoRefresh();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error loading initial servers:', error);
+                    });
+            }
+
+            // Initial fetch of server list (only done once)
+            fetch(`${API_BASE}/servers`).then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            }).then(data => {
+                serverIds = data.servers;
+
+                if (!serverIds || serverIds.length === 0) {
+                    serversContainer.innerHTML = '<div class="error">No active servers found.</div>';
+                    serverCheckboxesContainer.innerHTML = 'No servers available';
+                    return;
+                }
+
+                serversContainer.innerHTML = '';
+                setupServerUI(serverIds);
+
+            }).catch(error => {
+                console.error('Error fetching servers:', error);
+                serversContainer.innerHTML = `<div class="error">Error loading servers: ${error.message}</div>`;
+                serverCheckboxesContainer.innerHTML = `<div class="error">Error loading server list: ${error.message}</div>`;
+            });
+        });
+
+        // Function to apply minimal mode
+        function applyMinimalMode(isMinimal) {
+            const controlsElement = document.getElementById('controls');
+            const h1Element = document.querySelector('h1');
+            
+            if (isMinimal) {
+                controlsElement.style.display = 'none';
+                h1Element.style.display = 'none';
+            } else {
+                controlsElement.style.display = 'block';
+                h1Element.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+
+</html>

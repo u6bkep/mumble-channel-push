@@ -1,0 +1,23 @@
+version: '3'
+
+services:
+  channel-push:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - ICE_HOST=mumble-server  # Change this to your Mumble server host
+      - ICE_PORT=6502
+      - ICE_SECRET=blacksheepwall
+      - WEB_HOST=0.0.0.0
+      - WEB_PORT=5000
+    # If your Mumble server is also running in Docker, you can add this:
+    # depends_on:
+    #   - mumble-server
+    # networks:
+    #   - mumble-network
+
+# If your Mumble server is also running in Docker, you can add this:
+# networks:
+#   mumble-network:
+#     external: true
