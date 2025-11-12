@@ -27,6 +27,9 @@
             --share-border: #ddd;
             --input-border: #ccc;
             --box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            --slider-bg: #ccc;
+            --slider-active: #4a76a8;
+            --slider-button: white;
         }
 
         /* Dark mode variables */
@@ -50,6 +53,51 @@
             --share-border: #444;
             --input-border: #555;
             --box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+            --slider-bg: #444;
+            --slider-active: #71a0d8;
+            --slider-button: #e0e0e0;
+        }
+
+        /* Monochrome mode variables for e-ink displays */
+        [data-theme="monochrome"] {
+            --bg-color: #ffffff;
+            --container-bg: #ffffff;
+            --text-color: #000000;
+            --header-color: #000000;
+            --controls-bg: #ffffff;
+            --server-border: #000000;
+            --server-name-color: #000000;
+            --channel-name-color: #000000;
+            --muted-color: #666666;
+            --loading-color: #333333;
+            --error-bg: #cccccc;
+            --error-color: #000000;
+            --empty-color: #666666;
+            --timestamp-color: #666666;
+            --last-refresh-color: #333333;
+            --share-bg: #ffffff;
+            --share-border: #000000;
+            --input-border: #000000;
+            --box-shadow: none;
+            --slider-bg: #999;
+            --slider-active: #000;
+            --slider-button: #fff;
+        }
+
+        /* Replace theme switch styles with theme select styles */
+        .theme-select {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .theme-select label {
+            margin-right: 10px;
+        }
+
+        .theme-select select {
+            padding: 4px 8px;
+            border-radius: 4px;
         }
 
         body {
@@ -90,12 +138,12 @@
 
         .refresh-controls {
             margin-top: 15px;
-            display: flex;
+            display:flow;
             align-items: center;
         }
 
         .server {
-            margin-bottom: 20px;
+            margin-bottom: 10px;
             padding: 15px;
             border: 1px solid var(--server-border);
             border-radius: 4px;
@@ -111,7 +159,7 @@
         }
 
         .channel {
-            margin-left: 20px;
+            margin-left: 5px;
             margin-bottom: 10px;
         }
 
@@ -122,12 +170,12 @@
         }
 
         .users {
-            margin-left: 40px;
+            margin-left: 5px;
         }
 
         .user {
             margin: 5px 0;
-            display: flex;
+            display: flow;
             align-items: center;
         }
 
@@ -209,6 +257,7 @@
             display: inline-block;
             width: 50px;
             height: 24px;
+            margin-right: 10px;
         }
 
         .switch input {
@@ -224,7 +273,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: #ccc;
+            background-color: var(--slider-bg);
             transition: .4s;
             border-radius: 24px;
         }
@@ -236,17 +285,23 @@
             width: 16px;
             left: 4px;
             bottom: 4px;
-            background-color: white;
+            background-color: var(--slider-button);
             transition: .4s;
             border-radius: 50%;
         }
 
         input:checked + .slider {
-            background-color: #4a76a8;
+            background-color: var(--slider-active);
         }
 
         input:checked + .slider:before {
             transform: translateX(26px);
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
         }
 
         /* Additional styles for dark mode */
@@ -269,12 +324,13 @@
         <div id="controls" class="controls">
             <details>
                 <summary>Settings</summary>
-                <div class="theme-switch">
-                    <label for="theme-toggle">Dark Mode:</label>
-                    <label class="switch">
-                        <input type="checkbox" id="theme-toggle">
-                        <span class="slider"></span>
-                    </label>
+                <div class="theme-select">
+                    <label for="theme-select">Theme:</label>
+                    <select id="theme-select">
+                        <option value="light">Light</option>
+                        <option value="dark">Dark</option>
+                        <option value="monochrome">Monochrome (e-ink)</option>
+                    </select>
                 </div>
                 <div class="theme-switch">
                     <label for="minimal-toggle">Minimal Mode:</label>
@@ -290,9 +346,12 @@
                 <div class="refresh-controls">
                     <button id="refresh-btn">Refresh Now</button>
                     <span class="last-refresh" id="last-refresh">Last refresh: Never</span>
-                    <label for="auto-refresh" style="margin-left: 15px;">
-                        <input type="checkbox" id="auto-refresh" checked>
-                        Auto-refresh every
+                    <label class="checkbox-label" style="margin-left: 15px;">
+                        <span>Auto-refresh every</span>
+                        <label class="switch">
+                            <input type="checkbox" id="auto-refresh" checked>
+                            <span class="slider"></span>
+                        </label>
                     </label>
                     <select id="refresh-interval">
                         <option value="10">10 seconds</option>
@@ -302,9 +361,12 @@
                     </select>
                 </div>
                 <div>
-                    <label for="use-sse" style="margin-right: 10px;">
-                        <input type="checkbox" id="use-sse" checked>
-                        Use real-time updates
+                    <label class="checkbox-label" style="margin-right: 10px;">
+                        <span>Use real-time updates</span>
+                        <label class="switch">
+                            <input type="checkbox" id="use-sse" checked>
+                            <span class="slider"></span>
+                        </label>
                     </label>
                     <span id="sse-status" style="font-size: 12px;">(Connected)</span>
                 </div>
@@ -331,11 +393,18 @@
             const autoRefreshCheckbox = document.getElementById('auto-refresh');
             const refreshIntervalSelect = document.getElementById('refresh-interval');
             const shareUrlInput = document.getElementById('share-url');
-            const themeToggle = document.getElementById('theme-toggle');
+            const themeSelect = document.getElementById('theme-select');
             const useSSECheckbox = document.getElementById('use-sse');
             const sseStatusEl = document.getElementById('sse-status');
             const settingsDetails = document.querySelector('#controls details');
             const minimalToggle = document.getElementById('minimal-toggle');
+
+            // Add double-click handler to title
+            document.querySelector('body').addEventListener('dblclick', function() {
+                minimalToggle.checked = false;
+                applyMinimalMode(false);
+                updateUrlParams();
+            });
 
             let serverIds = [];
             let serverData = {};
@@ -347,26 +416,21 @@
             const API_BASE = window.location.origin;
 
             // Theme handling
-            function setTheme(isDark) {
-                if (isDark) {
-                    document.documentElement.setAttribute('data-theme', 'dark');
-                    themeToggle.checked = true;
-                } else {
-                    document.documentElement.setAttribute('data-theme', 'light');
-                    themeToggle.checked = false;
-                }
+            function setTheme(theme) {
+                document.documentElement.setAttribute('data-theme', theme);
+                themeSelect.value = theme;
             }
 
             // Initialize theme from URL parameter or system preference
             function initTheme(params) {
                 const theme = params.theme;
-                
-                if (theme === 'dark' || theme === 'light') {
-                    setTheme(theme === 'dark');
+
+                if (['light', 'dark', 'monochrome'].includes(theme)) {
+                    setTheme(theme);
                 } else {
                     // Check if user prefers dark mode
                     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                    setTheme(prefersDark);
+                    setTheme(prefersDark ? 'dark' : 'light');
                 }
             }
 
@@ -404,10 +468,10 @@
                 params.set('autoRefresh', autoRefreshCheckbox.checked);
                 params.set('interval', refreshIntervalSelect.value);
                 params.set('useSSE', useSSECheckbox.checked);
-                
+
                 // Include current theme in URL
-                params.set('theme', document.documentElement.getAttribute('data-theme') || 'light');
-                
+                params.set('theme', document.documentElement.getAttribute('data-theme') || 'dark');
+
                 // Set minimal mode parameter
                 params.set('minimal', minimalToggle.checked);
 
@@ -426,9 +490,9 @@
                 }
 
                 console.log(`Setting up SSE for server ${serverId}`);
-                
+
                 const eventSource = new EventSource(`${API_BASE}/listen/${serverId}`);
-                
+
                 eventSource.onmessage = function(event) {
                     try {
                         const data = JSON.parse(event.data);
@@ -439,16 +503,16 @@
                         console.error(`Error processing SSE data: ${e}`);
                     }
                 };
-                
+
                 eventSource.onerror = function() {
                     console.error(`SSE connection error for server ${serverId}`);
                     sseStatusEl.textContent = "(Connection error)";
                     sseStatusEl.style.color = "var(--error-color)";
-                    
+
                     // Close and remove this connection
                     eventSource.close();
                     delete sseConnections[serverId];
-                    
+
                     // Try to reconnect after a delay if still checked
                     setTimeout(() => {
                         if (useSSECheckbox.checked) {
@@ -456,13 +520,13 @@
                         }
                     }, 5000);
                 };
-                
+
                 eventSource.onopen = function() {
                     console.log(`SSE connection opened for server ${serverId}`);
                     sseStatusEl.textContent = "(Connected)";
                     sseStatusEl.style.color = "";
                 };
-                
+
                 sseConnections[serverId] = eventSource;
             }
 
@@ -487,16 +551,16 @@
                     // Set up SSE for all visible servers
                     const checkedServers = Array.from(document.querySelectorAll('.server-checkbox:checked'))
                         .map(checkbox => checkbox.dataset.serverId);
-                    
+
                     checkedServers.forEach(setupSSE);
                     sseStatusEl.textContent = "(Connected)";
                 } else {
                     closeAllSSE();
                 }
-                
+
                 // Update auto-refresh controls visibility based on SSE state
                 updateAutoRefreshVisibility();
-                
+
                 // Update URL parameters when useSSE changes
                 updateUrlParams();
             });
@@ -587,9 +651,9 @@
             const config = applyUrlParams();
             shareUrlInput.value = window.location.href;
 
-            // Add event listener for theme toggle
-            themeToggle.addEventListener('change', function() {
-                setTheme(this.checked);
+            // Add event listener for theme select
+            themeSelect.addEventListener('change', function() {
+                setTheme(this.value);
                 updateUrlParams();
             });
 
@@ -652,12 +716,12 @@
                     channel.users.forEach(user => {
                         const userDiv = document.createElement('div');
                         userDiv.className = 'user';
-                        
-                        // Add username span
+
+                        // Add username span with dash prefix
                         const userName = document.createElement('span');
-                        userName.textContent = user.name;
+                        userName.textContent = `• ${user.name}`;
                         userDiv.appendChild(userName);
-                        
+
                         // Add icons instead of text labels
                         if (user.selfMute) {
                             const icon = document.createElement('img');
@@ -666,7 +730,7 @@
                             icon.alt = 'Self-Muted';
                             icon.title = 'Self-Muted';
                             userDiv.appendChild(icon);
-                        } 
+                        }
                         if (user.mute) {
                             const icon = document.createElement('img');
                             icon.className = 'user-icon';
@@ -675,7 +739,7 @@
                             icon.title = 'Server-Muted';
                             userDiv.appendChild(icon);
                         }
-                        
+
                         if (user.selfDeaf) {
                             const icon = document.createElement('img');
                             icon.className = 'user-icon';
@@ -692,7 +756,7 @@
                             icon.title = 'Server-Deafened';
                             userDiv.appendChild(icon);
                         }
-                        
+
                         usersDiv.appendChild(userDiv);
                     });
 
@@ -716,9 +780,9 @@
             function updateServerDisplay(serverId) {
                 const data = serverData[serverId];
                 const serverDiv = document.getElementById(`server-${serverId}`);
-                
+
                 if (!serverDiv || !data) return;
-                
+
                 serverDiv.innerHTML = '';
 
                 const serverName = document.createElement('div');
@@ -780,6 +844,14 @@
 
                 serverIds.forEach(serverId => {
                     const checkboxDiv = document.createElement('div');
+                    checkboxDiv.className = 'checkbox-label';
+                    
+                    const label = document.createElement('span');
+                    label.textContent = `Server ${serverId}`;
+
+                    const switchLabel = document.createElement('label');
+                    switchLabel.className = 'switch';
+
                     const checkbox = document.createElement('input');
                     checkbox.type = 'checkbox';
                     checkbox.id = `server-checkbox-${serverId}`;
@@ -788,18 +860,18 @@
                     // Check if this server is in URL params
                     if (config.servers.length === 0 || config.servers.includes(Number(serverId))) {
                         checkbox.checked = true;
-                    } else {
-                        checkbox.checked = false;
                     }
 
                     checkbox.dataset.serverId = serverId;
 
-                    const label = document.createElement('label');
-                    label.htmlFor = `server-checkbox-${serverId}`;
-                    label.textContent = `Server ${serverId}`;
+                    const sliderSpan = document.createElement('span');
+                    sliderSpan.className = 'slider';
 
-                    checkboxDiv.appendChild(checkbox);
+                    switchLabel.appendChild(checkbox);
+                    switchLabel.appendChild(sliderSpan);
+                    
                     checkboxDiv.appendChild(label);
+                    checkboxDiv.appendChild(switchLabel);
                     serverCheckboxesContainer.appendChild(checkboxDiv);
 
                     // Create server div
@@ -848,7 +920,7 @@
                     .then(() => {
                         initialLoadComplete = true;
                         updateLastRefreshTime();
-                        
+
                         // Set up SSE connections for checked servers if enabled
                         if (useSSECheckbox.checked) {
                             checkedServers.forEach(setupSSE);
@@ -890,7 +962,7 @@
         function applyMinimalMode(isMinimal) {
             const controlsElement = document.getElementById('controls');
             const h1Element = document.querySelector('h1');
-            
+
             if (isMinimal) {
                 controlsElement.style.display = 'none';
                 h1Element.style.display = 'none';

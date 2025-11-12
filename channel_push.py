@@ -1,6 +1,6 @@
 import Ice, IcePy
 import MumbleServer
-from flask import Flask, jsonify, Response, send_from_directory
+from flask import Flask, jsonify, Response, send_from_directory, request
 import threading
 import signal
 import sys
@@ -8,6 +8,7 @@ import json
 import time
 import argparse
 import os
+import hashlib
 from collections import defaultdict
 
 app = Flask(__name__)
@@ -157,6 +158,21 @@ class MumbleChannelTrackerI(MumbleServer.ServerCallback):
             self.channels[state.id] = state
         self._notify_clients()
 
+    def get_state_hash(self):
+        """Generate a hash of the current server state for caching"""
+        with self.lock:
+            # Create a deterministic representation of the current state
+            state_data = {
+                'channels': {cid: {'name': ch.name, 'parent': ch.parent} 
+                           for cid, ch in self.channels.items()},
+                'users': {uid: {'name': u.name, 'channel': u.channel, 'mute': u.mute, 
+                              'deaf': u.deaf, 'selfMute': u.selfMute, 'selfDeaf': u.selfDeaf}
+                        for uid, u in self.users.items()}
+            }
+            # Convert to JSON string and hash it
+            state_json = json.dumps(state_data, sort_keys=True)
+            return hashlib.md5(state_json.encode('utf-8')).hexdigest()
+
 def event_stream(server_id):
     """Generator for SSE events"""
     # Create a queue for this client
@@ -302,10 +318,27 @@ def get_servers():
 
 @app.route('/<int:server_id>')
 def get_server(server_id):
-    """Return the channel tree for a specific server"""
-    if server_id in trackers:
-        return jsonify(trackers[server_id].get_channel_tree())
-    return jsonify({"error": f"Server {server_id} not found"}), 404
+    """Return the channel tree for a specific server with HTTP caching"""
+    if server_id not in trackers:
+        return jsonify({"error": f"Server {server_id} not found"}), 404
+    
+    tracker = trackers[server_id]
+    current_etag = tracker.get_state_hash()
+    
+    # Check if client has a cached version
+    if_none_match = request.headers.get('If-None-Match')
+    if if_none_match and if_none_match == current_etag:
+        return '', 304  # Not Modified
+    
+    # Get the channel tree
+    channel_tree = tracker.get_channel_tree()
+    
+    # Create response with caching headers
+    response = jsonify(channel_tree)
+    response.headers['ETag'] = current_etag
+    response.headers['Cache-Control'] = 'private, max-age=0, must-revalidate'
+    
+    return response
 
 @app.route('/listen/<int:server_id>')
 def listen_server(server_id):
