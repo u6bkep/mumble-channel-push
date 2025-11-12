@@ -21,8 +21,8 @@ COPY slices/${SLICE_NAME} .
 # build slice
 RUN slice2py ${SLICE_NAME}
     
-# Expose the port for the web server
-EXPOSE 5000
+# Expose the port for the web server (matches CVP_HTTP_PORT default below)
+EXPOSE 5001
 
 # Set environment variables
 ENV MUMBLE_ICE_HOST=mumble-server
@@ -32,5 +32,5 @@ ENV CVP_ICE_HOST=channel-push
 ENV CVP_HTTP_HOST=0.0.0.0
 ENV CVP_HTTP_PORT=5001
 
-# Run the application
-CMD ["python", "channel_push.py"]
+# Run the application with Gunicorn (production WSGI server)
+CMD ["gunicorn", "-c", "gunicorn_conf.py", "channel_push:app"]

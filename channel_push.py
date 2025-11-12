@@ -1,6 +1,7 @@
 import Ice, IcePy
 import MumbleServer
 from flask import Flask, jsonify, Response, send_from_directory, request
+import logging
 import threading
 import signal
 import sys
@@ -10,8 +11,49 @@ import argparse
 import os
 import hashlib
 from collections import defaultdict
+from types import SimpleNamespace
+import atexit
 
 app = Flask(__name__)
+
+# Logging
+logger = logging.getLogger(__name__)
+
+LOG_LEVELS = {
+    'CRITICAL': logging.CRITICAL,
+    'ERROR': logging.ERROR,
+    'WARNING': logging.WARNING,
+    'INFO': logging.INFO,
+    'DEBUG': logging.DEBUG,
+    'NOTSET': logging.NOTSET,
+}
+
+def configure_logging(level_str: str | None = None) -> None:
+    """Configure root and app loggers.
+
+    Priority order for level: argument > env (handled in parse_args default) > INFO.
+    """
+    # Resolve level
+    if level_str is None:
+        level = logging.INFO
+    else:
+        level = LOG_LEVELS.get(level_str.upper(), logging.INFO)
+
+    root = logging.getLogger()
+    # Attach a stream handler only once
+    if not root.handlers:
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter(
+            fmt='%(asctime)s %(levelname)s [%(name)s] %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
+    root.setLevel(level)
+    logger.setLevel(level)
+
+    # Make werkzeug (Flask) follow our level
+    logging.getLogger('werkzeug').setLevel(level)
 
 # Global variables to keep references
 ice = None
@@ -34,7 +76,47 @@ def parse_args():
                         help='Web server port (default: from CVP_HTTP_PORT env var or 5000)')
     parser.add_argument('--ice-host', default=os.environ.get('CVP_ICE_HOST', 'localhost'),
                         help='Ice callback host (default: from CVP_ICE_HOST env var or localhost)')
+    parser.add_argument('--log-level', default=os.environ.get('MUMBLE_LOG_LEVEL', 'INFO'),
+                        help='Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL). '
+                             'Default from MUMBLE_LOG_LEVEL or INFO')
     return parser.parse_args()
+
+def build_args_from_env() -> SimpleNamespace:
+    """Build an args-like object from environment variables only.
+
+    This avoids argparse parsing of unrelated process arguments (e.g., Gunicorn's),
+    while preserving the same defaults as parse_args().
+    """
+    return SimpleNamespace(
+        host=os.environ.get('MUMBLE_ICE_HOST', 'localhost'),
+        port=int(os.environ.get('MUMBLE_ICE_PORT', '6502')),
+        secret=os.environ.get('MUMBLE_ICE_SECRET', ''),
+        web_host=os.environ.get('CVP_HTTP_HOST', '0.0.0.0'),
+        web_port=int(os.environ.get('CVP_HTTP_PORT', '5000')),
+        ice_host=os.environ.get('CVP_ICE_HOST', 'localhost'),
+        log_level=os.environ.get('MUMBLE_LOG_LEVEL', 'INFO'),
+    )
+
+def init_services(args: SimpleNamespace | None = None) -> None:
+    """Initialize logging and the Mumble ICE connection for a long-running process.
+
+    Use this when the app is run under a WSGI server (e.g., Gunicorn). It will
+    not start Flask's dev server. Registers atexit cleanup for graceful shutdown.
+    """
+    if args is None:
+        args = build_args_from_env()
+
+    # Configure logging early using env/args
+    configure_logging(args.log_level)
+    logger.info("Worker initializing services with host=%s, ice_port=%s", args.host, args.port)
+
+    ok = initialize_mumble_connection(args)
+    if not ok:
+        # Surface failure to caller so process can decide to exit
+        raise RuntimeError("Failed to initialize Mumble ICE connection")
+
+    # Ensure cleanup runs when the worker/process exits
+    atexit.register(cleanup)
 
 class MumbleChannelTrackerI(MumbleServer.ServerCallback):
     """
@@ -56,7 +138,7 @@ class MumbleChannelTrackerI(MumbleServer.ServerCallback):
                 self.channels = self.server.getChannels()
                 self.users = self.server.getUsers()
             except Exception as e:
-                print(f"Error refreshing data: {e}")
+                logger.exception("Error refreshing data")
     
     def get_channel_tree(self):
         """Build a tree structure of channels"""
@@ -118,42 +200,42 @@ class MumbleChannelTrackerI(MumbleServer.ServerCallback):
 
     # ServerCallback interface methods
     def userConnected(self, state, current=None):
-        print(f"User connected: {state.name} on server {self.server_id}")
+        logger.info("User connected: %s on server %s", state.name, self.server_id)
         with self.lock:
             self.users[state.session] = state
         self._notify_clients()
         
     def userDisconnected(self, state, current=None):
-        print(f"User disconnected: {state.name} from server {self.server_id}")
+        logger.info("User disconnected: %s from server %s", state.name, self.server_id)
         with self.lock:
             if state.session in self.users:
                 del self.users[state.session]
         self._notify_clients()
             
     def userStateChanged(self, state, current=None):
-        print(f"User state changed: {state.name} on server {self.server_id}")
+        logger.debug("User state changed: %s on server %s", state.name, self.server_id)
         with self.lock:
             self.users[state.session] = state
         self._notify_clients()
         
     def userTextMessage(self, state, message, current=None):
-        print(f"Text message from {state.name} on server {self.server_id}: {message.text}")
+        logger.debug("Text message from %s on server %s: %s", state.name, self.server_id, message.text)
         
     def channelCreated(self, state, current=None):
-        print(f"Channel created: {state.name} on server {self.server_id}")
+        logger.info("Channel created: %s on server %s", state.name, self.server_id)
         with self.lock:
             self.channels[state.id] = state
         self._notify_clients()
         
     def channelRemoved(self, state, current=None):
-        print(f"Channel removed: {state.name} from server {self.server_id}")
+        logger.info("Channel removed: %s from server %s", state.name, self.server_id)
         with self.lock:
             if state.id in self.channels:
                 del self.channels[state.id]
         self._notify_clients()
             
     def channelStateChanged(self, state, current=None):
-        print(f"Channel state changed: {state.name} on server {self.server_id}")
+        logger.debug("Channel state changed: %s on server %s", state.name, self.server_id)
         with self.lock:
             self.channels[state.id] = state
         self._notify_clients()
@@ -229,22 +311,22 @@ def initialize_mumble_connection(args):
 
         prx.ice_ping()
 
-        print("Ping successful")
+        logger.info("Ping successful")
         
         # Now we can cast the proxy to the Meta interface
         # meta = mumble_ice_module.MetaPrx.checkedCast(prx)
         meta = MumbleServer.MetaPrx.checkedCast(prx)
 
         murmurversion = meta.getVersion()[:3]
-        print(f"Murmur version: {murmurversion}")
+        logger.info("Murmur version: %s", murmurversion)
 
         try:
             booted = meta.getBootedServers()
         except MumbleServer.InvalidSecretException:
-            print("Invalid secret provided. Please check your configuration.")
+            logger.error("Invalid secret provided. Please check your configuration.")
             return False
 
-        print(f"booted servers: {len(booted)}")
+        logger.info("Booted servers: %d", len(booted))
 
         # Create the tracker and register it with the server
         if booted:
@@ -269,17 +351,15 @@ def initialize_mumble_connection(args):
                 server.addCallback(tracker_proxy)
                 trackers[server_id] = tracker_servant  # Map server_id to tracker
                 
-                print(f"Channel tracker registered with server {server_id}")
+                logger.info("Channel tracker registered with server %s", server_id)
             
             return True
         else:
-            print("No booted servers found")
+            logger.warning("No booted servers found")
             return False
             
     except Exception as e:
-        print(f"Error initializing Mumble connection: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception("Error initializing Mumble connection")
         if ice:
             try:
                 ice.destroy()
@@ -289,7 +369,7 @@ def initialize_mumble_connection(args):
 
 def cleanup():
     global ice, adapters
-    print("Cleaning up Ice resources...")
+    logger.info("Cleaning up Ice resources...")
     
     # Deactivate all adapters first
     for adapter in adapters:
@@ -306,7 +386,7 @@ def cleanup():
             pass
 
 def signal_handler(sig, frame):
-    print('Shutting down...')
+    logger.info('Shutting down...')
     cleanup()
     sys.exit(0)
 
@@ -355,6 +435,8 @@ def listen_server(server_id):
         }
     )
 
+# Log level is configured on startup only; change requires restart
+
 @app.route('/')
 @app.route('/web')
 def serve_web():
@@ -376,7 +458,10 @@ if __name__ == "__main__":
     # Parse command line arguments
     args = parse_args()
 
-    print(f"Starting with host={args.host}, ice_port={args.port}")
+    # Configure logging early
+    configure_logging(args.log_level)
+
+    logger.info("Starting with host=%s, ice_port=%s", args.host, args.port)
     
     # Set up signal handler for clean shutdown
     signal.signal(signal.SIGINT, signal_handler)
@@ -392,7 +477,7 @@ if __name__ == "__main__":
         flask_thread.daemon = True
         flask_thread.start()
         
-        print(f"Flask server started in background on {args.web_host}:{args.web_port}")
+        logger.info("Flask server started in background on %s:%s", args.web_host, args.web_port)
         
         # Keep the main thread alive to receive Ice callbacks
         try:
@@ -404,4 +489,4 @@ if __name__ == "__main__":
         finally:
             cleanup()
     else:
-        print("Failed to initialize Mumble connection")
+        logger.error("Failed to initialize Mumble connection")
