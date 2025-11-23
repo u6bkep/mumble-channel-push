@@ -12,7 +12,7 @@ RUN --mount=type=cache,target=/var/cache/apt --mount=type=cache,target=/root/.ca
 
     
 # Copy the application code
-COPY channel_push.py .
+COPY channel_push.py gunicorn_conf.py ./
 COPY static/ static/
 
 ARG SLICE_NAME="MumbleServer_v1_5_735.ice"
