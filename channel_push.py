@@ -10,6 +10,8 @@ import time
 import argparse
 import os
 import hashlib
+import traceback
+import gc
 from collections import defaultdict
 from types import SimpleNamespace
 import atexit
@@ -390,6 +392,93 @@ def signal_handler(sig, frame):
     cleanup()
     sys.exit(0)
 
+def debug_handler(sig, frame):
+    """SIGUSR1 handler: Print diagnostic information about threads, connections, and state."""
+    logger.info("="*80)
+    logger.info("SIGUSR1 received - Dumping diagnostic information")
+    logger.info("="*80)
+    
+    # 1. Thread information
+    logger.info("\n--- THREAD INFORMATION ---")
+    logger.info(f"Active thread count: {threading.active_count()}")
+    for thread in threading.enumerate():
+        logger.info(f"  Thread: {thread.name} (daemon={thread.daemon}, alive={thread.is_alive()})")
+    
+    # 2. Thread stack traces
+    logger.info("\n--- THREAD STACK TRACES ---")
+    for thread_id, frame in sys._current_frames().items():
+        logger.info(f"\nThread ID: {thread_id}")
+        # Try to match thread_id to thread name
+        for thread in threading.enumerate():
+            if thread.ident == thread_id:
+                logger.info(f"  Name: {thread.name}")
+                break
+        logger.info("  Stack:")
+        for line in traceback.format_stack(frame):
+            logger.info(f"    {line.strip()}")
+    
+    # 3. SSE client information
+    logger.info("\n--- SSE CLIENT CONNECTIONS ---")
+    total_clients = sum(len(clients) for clients in sse_clients.values())
+    logger.info(f"Total SSE clients connected: {total_clients}")
+    for server_id, clients in sse_clients.items():
+        logger.info(f"  Server {server_id}: {len(clients)} clients")
+        for i, client in enumerate(clients):
+            with client.lock:
+                logger.info(f"    Client {i}: {len(client.messages)} queued messages")
+    
+    # 4. Tracker information
+    logger.info("\n--- TRACKER STATE ---")
+    logger.info(f"Number of trackers: {len(trackers)}")
+    for server_id, tracker in trackers.items():
+        with tracker.lock:
+            logger.info(f"  Server {server_id}:")
+            logger.info(f"    Channels: {len(tracker.channels)}")
+            logger.info(f"    Users: {len(tracker.users)}")
+            logger.info(f"    State hash: {tracker.get_state_hash()}")
+    
+    # 5. Ice connection state
+    logger.info("\n--- ICE CONNECTION STATE ---")
+    if ice:
+        logger.info(f"  Ice communicator active: {not ice.isShutdown()}")
+        logger.info(f"  Number of adapters: {len(adapters)}")
+        for i, adapter in enumerate(adapters):
+            try:
+                logger.info(f"    Adapter {i}: {adapter.getName()} (active={not adapter.isDeactivated()})")
+            except Exception as e:
+                logger.info(f"    Adapter {i}: Error querying state - {e}")
+    else:
+        logger.info("  Ice communicator: Not initialized")
+    
+    # 6. Memory and garbage collection info
+    logger.info("\n--- MEMORY & GC INFORMATION ---")
+    gc_stats = gc.get_stats()
+    logger.info(f"  GC collections: {gc_stats}")
+    logger.info(f"  GC garbage count: {len(gc.garbage)}")
+    logger.info(f"  Object counts by type:")
+    type_counts = defaultdict(int)
+    for obj in gc.get_objects():
+        type_counts[type(obj).__name__] += 1
+    # Show top 10 most common object types
+    for obj_type, count in sorted(type_counts.items(), key=lambda x: x[1], reverse=True)[:10]:
+        logger.info(f"    {obj_type}: {count}")
+    
+    # 7. Flask request context (if available)
+    try:
+        from flask import has_request_context, request as flask_request
+        logger.info("\n--- FLASK CONTEXT ---")
+        if has_request_context():
+            logger.info(f"  Active request: {flask_request.method} {flask_request.path}")
+            logger.info(f"  Remote address: {flask_request.remote_addr}")
+        else:
+            logger.info("  No active Flask request context")
+    except Exception as e:
+        logger.info(f"  Error checking Flask context: {e}")
+    
+    logger.info("\n" + "="*80)
+    logger.info("End of diagnostic dump")
+    logger.info("="*80 + "\n")
+
 # New API routes
 @app.route('/servers')
 def get_servers():
@@ -463,9 +552,10 @@ if __name__ == "__main__":
 
     logger.info("Starting with host=%s, ice_port=%s", args.host, args.port)
     
-    # Set up signal handler for clean shutdown
+    # Set up signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGUSR1, debug_handler)
     
     # Initialize Mumble connection
     if initialize_mumble_connection(args):

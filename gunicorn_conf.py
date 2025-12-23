@@ -34,6 +34,16 @@ forwarded_allow_ips = os.environ.get("GUNICORN_FORWARDED_ALLOW_IPS", "*")
 def post_fork(server, worker):
     """Initialize ICE connection inside each worker after fork."""
     from channel_push import init_services
+    import signal
+    
+    # Set up SIGUSR1 handler for debugging in each worker
+    def worker_debug_handler(sig, frame):
+        from channel_push import debug_handler
+        server.log.info("Worker %s: SIGUSR1 received, dumping diagnostics", worker.pid)
+        debug_handler(sig, frame)
+    
+    signal.signal(signal.SIGUSR1, worker_debug_handler)
+    
     try:
         init_services()  # uses env
         server.log.info("Worker %s: Mumble ICE services initialized", worker.pid)
@@ -44,3 +54,16 @@ def post_fork(server, worker):
         sys.exit(1)
 
 # When workers exit, atexit in init_services handles cleanup.
+
+
+# To dump diagnostics from ALL workers, use this helper script:
+# 
+#   #!/bin/bash
+#   # dump_all_workers.sh
+#   MASTER_PID=$(pgrep -f "gunicorn.*channel_push")
+#   for PID in $(pgrep -P $MASTER_PID); do
+#       echo "Signaling worker $PID"
+#       kill -USR1 $PID
+#   done
+#
+# Or run: pkill -USR1 -P <master_pid>
