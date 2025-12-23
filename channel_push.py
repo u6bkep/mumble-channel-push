@@ -392,92 +392,96 @@ def signal_handler(sig, frame):
     cleanup()
     sys.exit(0)
 
+def _debug_print(msg):
+    """Print debug message with immediate flush for Docker visibility."""
+    print(msg, file=sys.stderr, flush=True)
+
 def debug_handler(sig, frame):
     """SIGUSR1 handler: Print diagnostic information about threads, connections, and state."""
-    logger.info("="*80)
-    logger.info("SIGUSR1 received - Dumping diagnostic information")
-    logger.info("="*80)
+    _debug_print("="*80)
+    _debug_print(f"SIGUSR1 received - Dumping diagnostic information (PID: {os.getpid()})")
+    _debug_print("="*80)
     
     # 1. Thread information
-    logger.info("\n--- THREAD INFORMATION ---")
-    logger.info(f"Active thread count: {threading.active_count()}")
+    _debug_print("\n--- THREAD INFORMATION ---")
+    _debug_print(f"Active thread count: {threading.active_count()}")
     for thread in threading.enumerate():
-        logger.info(f"  Thread: {thread.name} (daemon={thread.daemon}, alive={thread.is_alive()})")
+        _debug_print(f"  Thread: {thread.name} (daemon={thread.daemon}, alive={thread.is_alive()})")
     
     # 2. Thread stack traces
-    logger.info("\n--- THREAD STACK TRACES ---")
-    for thread_id, frame in sys._current_frames().items():
-        logger.info(f"\nThread ID: {thread_id}")
+    _debug_print("\n--- THREAD STACK TRACES ---")
+    for thread_id, stack_frame in sys._current_frames().items():
+        _debug_print(f"\nThread ID: {thread_id}")
         # Try to match thread_id to thread name
         for thread in threading.enumerate():
             if thread.ident == thread_id:
-                logger.info(f"  Name: {thread.name}")
+                _debug_print(f"  Name: {thread.name}")
                 break
-        logger.info("  Stack:")
-        for line in traceback.format_stack(frame):
-            logger.info(f"    {line.strip()}")
+        _debug_print("  Stack:")
+        for line in traceback.format_stack(stack_frame):
+            _debug_print(f"    {line.strip()}")
     
     # 3. SSE client information
-    logger.info("\n--- SSE CLIENT CONNECTIONS ---")
+    _debug_print("\n--- SSE CLIENT CONNECTIONS ---")
     total_clients = sum(len(clients) for clients in sse_clients.values())
-    logger.info(f"Total SSE clients connected: {total_clients}")
+    _debug_print(f"Total SSE clients connected: {total_clients}")
     for server_id, clients in sse_clients.items():
-        logger.info(f"  Server {server_id}: {len(clients)} clients")
+        _debug_print(f"  Server {server_id}: {len(clients)} clients")
         for i, client in enumerate(clients):
             with client.lock:
-                logger.info(f"    Client {i}: {len(client.messages)} queued messages")
+                _debug_print(f"    Client {i}: {len(client.messages)} queued messages")
     
     # 4. Tracker information
-    logger.info("\n--- TRACKER STATE ---")
-    logger.info(f"Number of trackers: {len(trackers)}")
+    _debug_print("\n--- TRACKER STATE ---")
+    _debug_print(f"Number of trackers: {len(trackers)}")
     for server_id, tracker in trackers.items():
         with tracker.lock:
-            logger.info(f"  Server {server_id}:")
-            logger.info(f"    Channels: {len(tracker.channels)}")
-            logger.info(f"    Users: {len(tracker.users)}")
-            logger.info(f"    State hash: {tracker.get_state_hash()}")
+            _debug_print(f"  Server {server_id}:")
+            _debug_print(f"    Channels: {len(tracker.channels)}")
+            _debug_print(f"    Users: {len(tracker.users)}")
+            _debug_print(f"    State hash: {tracker.get_state_hash()}")
     
     # 5. Ice connection state
-    logger.info("\n--- ICE CONNECTION STATE ---")
+    _debug_print("\n--- ICE CONNECTION STATE ---")
     if ice:
-        logger.info(f"  Ice communicator active: {not ice.isShutdown()}")
-        logger.info(f"  Number of adapters: {len(adapters)}")
+        _debug_print(f"  Ice communicator active: {not ice.isShutdown()}")
+        _debug_print(f"  Number of adapters: {len(adapters)}")
         for i, adapter in enumerate(adapters):
             try:
-                logger.info(f"    Adapter {i}: {adapter.getName()} (active={not adapter.isDeactivated()})")
+                _debug_print(f"    Adapter {i}: {adapter.getName()} (active={not adapter.isDeactivated()})")
             except Exception as e:
-                logger.info(f"    Adapter {i}: Error querying state - {e}")
+                _debug_print(f"    Adapter {i}: Error querying state - {e}")
     else:
-        logger.info("  Ice communicator: Not initialized")
+        _debug_print("  Ice communicator: Not initialized")
     
     # 6. Memory and garbage collection info
-    logger.info("\n--- MEMORY & GC INFORMATION ---")
+    _debug_print("\n--- MEMORY & GC INFORMATION ---")
     gc_stats = gc.get_stats()
-    logger.info(f"  GC collections: {gc_stats}")
-    logger.info(f"  GC garbage count: {len(gc.garbage)}")
-    logger.info(f"  Object counts by type:")
+    _debug_print(f"  GC collections: {gc_stats}")
+    _debug_print(f"  GC garbage count: {len(gc.garbage)}")
+    _debug_print(f"  Object counts by type:")
     type_counts = defaultdict(int)
     for obj in gc.get_objects():
         type_counts[type(obj).__name__] += 1
     # Show top 10 most common object types
     for obj_type, count in sorted(type_counts.items(), key=lambda x: x[1], reverse=True)[:10]:
-        logger.info(f"    {obj_type}: {count}")
+        _debug_print(f"    {obj_type}: {count}")
     
     # 7. Flask request context (if available)
     try:
         from flask import has_request_context, request as flask_request
-        logger.info("\n--- FLASK CONTEXT ---")
+        _debug_print("\n--- FLASK CONTEXT ---")
         if has_request_context():
-            logger.info(f"  Active request: {flask_request.method} {flask_request.path}")
-            logger.info(f"  Remote address: {flask_request.remote_addr}")
+            _debug_print(f"  Active request: {flask_request.method} {flask_request.path}")
+            _debug_print(f"  Remote address: {flask_request.remote_addr}")
         else:
-            logger.info("  No active Flask request context")
+            _debug_print("  No active Flask request context")
     except Exception as e:
-        logger.info(f"  Error checking Flask context: {e}")
+        _debug_print(f"  Error checking Flask context: {e}")
     
-    logger.info("\n" + "="*80)
-    logger.info("End of diagnostic dump")
-    logger.info("="*80 + "\n")
+    _debug_print("\n" + "="*80)
+    _debug_print("End of diagnostic dump")
+    _debug_print("="*80 + "\n")
 
 # New API routes
 @app.route('/servers')

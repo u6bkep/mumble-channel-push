@@ -31,6 +31,26 @@ forwarded_allow_ips = os.environ.get("GUNICORN_FORWARDED_ALLOW_IPS", "*")
 
 # Hooks
 
+def on_starting(server):
+    """Called just before the master process is initialized."""
+    import signal
+    
+    def master_debug_handler(sig, frame):
+        import sys
+        import threading
+        import traceback
+        import os
+        print("="*80, file=sys.stderr, flush=True)
+        print(f"SIGUSR1 received on MASTER (PID: {os.getpid()})", file=sys.stderr, flush=True)
+        print("Note: Send SIGUSR1 to worker PIDs for full diagnostics", file=sys.stderr, flush=True)
+        print(f"Active threads: {threading.active_count()}", file=sys.stderr, flush=True)
+        for thread in threading.enumerate():
+            print(f"  {thread.name}", file=sys.stderr, flush=True)
+        print("="*80, file=sys.stderr, flush=True)
+    
+    signal.signal(signal.SIGUSR1, master_debug_handler)
+    server.log.info("SIGUSR1 debug handler registered on master")
+
 def post_fork(server, worker):
     """Initialize ICE connection inside each worker after fork."""
     from channel_push import init_services
